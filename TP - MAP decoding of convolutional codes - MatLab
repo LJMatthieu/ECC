@@ -1,0 +1,84 @@
+% UE D Error-correction coding
+% Computer Lab #2: MAP decoding of convolutional codes
+%
+% Main script:
+% - Setup the simulation
+% - Run the simulation
+% - Plot the BER performance
+
+clear all; close all;
+mex siso57.c;
+
+%% Convolutional code parameters
+R=1/2;								% Code rate
+g1=[1 0 1];							% Feedforward poly
+g2=[1 1 1];							% Feedback poly
+
+%% Simulation parameters
+N=1000;								% Number of data bits
+p0=0.5;								% Prior probability Pr(d_i=0)
+
+EbNodBVec=0:6;						% Range of SNR to simulate
+NumFrames=1000;						% Number of frames to simulate / SNR point
+
+%% Simulation main loop
+BER=zeros(1,length(EbNodBVec));
+
+for k=1:length(EbNodBVec)
+    
+    fprintf(1,'Eb/No = %.4f dB\n',EbNodBVec(k));
+    
+    % Compute noise variance from SNR
+    EbNo=10.^(EbNodBVec(k)/10);
+    sigma2_w=1/(2*R*EbNo);
+    
+    nerr = 0;
+    for Nf=1:NumFrames
+        
+        % TODO: Generate random data bits // DONE :)
+        %d=[1 0 0 0 0];
+        %d = randi([0, 1], 1,1000);
+        d= randsrc(1,1000,[0 1; 0.9 0.1]);
+
+        % TODO: Systematic recursive convolutional encoding // DONE :)
+        cs=d;                                     % systematic bit
+        cp=mod(filter(g1, g2, d), 2);                 % parity bit
+        
+        % BPSK modulation
+        X=2*cs-1;
+        Y=2*cp-1;    
+        
+        % TODO: AWGN channel Done :)
+        R_X=randn(1, N) * sqrt(sigma2_w)+X; % ajouter X pour ne pas décoder que le bruit
+        %R_X = X;
+        R_Y=randn(1, N) * sqrt(sigma2_w)+Y; % idem pour Y
+        %R_Y = Y;
+        
+        % TODO: Soft-output BPSK demodulator //DONE :)
+        L_X=(2/sigma2_w) * R_X;
+        L_Y=(2/sigma2_w) * R_Y;
+        
+        % TODO: Set prior information on data bits //DONE :)
+        La_D=zeros(1,N)+ log(0.1/0.9) ;
+        
+        % MAP decoding of received frame
+        L_D=siso57(La_D,L_X,L_Y);           % invoke siso57.c for decoding
+        d_dec=L_D>0;                    % hard-decision on data bits
+        % Count and accumulate decoding errors on data bits
+        nerr=nerr+sum(xor(d,d_dec));
+    end
+    
+    % Compute BER for current SNR point
+    BER(k)=nerr/(N*NumFrames);
+       
+end
+disp(' ');
+
+%% Plot simulation results
+figure(1);
+Pb_BPSK=0.5*erfc(sqrt(10.^(EbNodBVec/10)));
+semilogy(EbNodBVec,Pb_BPSK,'r-',EbNodBVec,BER,'bo-');
+xlabel('Eb/No (dB)'); ylabel('BER'); grid on;
+legend('Uncoded BPSK','MAP decoder');
+
+%hist(d);
