@@ -1,0 +1,138 @@
+ % UE D Error-correction coding
+% Computer Lab #3: Simulation of a convolutional turbo code
+%
+% Main script:
+% - Setup the simulation
+% - Run the simulation
+% - Plot the BER performance
+
+clear all; close all;
+mex siso57.c;
+
+%% Convolutional code parameters
+g1=[1 0 1];							% Feedforward poly
+g2=[1 1 1];							% Feedback poly
+
+%% Simulation parameters
+R=1/2;          					% Code rate of the turbo code
+N=100;								% Number of data bits
+Niter=5;							% Number of turbo decoding iterations
+
+EbNodBVec=0:6;						% Range of SNR to simulate
+NumFrames=5000;						% Number of frames to simulate / SNR point
+
+%% Simulation main loop
+BER=zeros(length(EbNodBVec),Niter);
+
+rng(1237);
+
+% TODO: Generate random interleaver
+perm=randperm(N);
+	
+% TODO: Regular permutation
+%perm=zeros(1,N);
+	
+
+for k=1:length(EbNodBVec)
+    
+    fprintf(1,'Eb/No = %.4f dB\n',EbNodBVec(k));
+    
+    % Compute noise variance from SNR
+    EbNo=10.^(EbNodBVec(k)/10);
+    sigma2_w=1/(2*R*EbNo);
+	nerr = zeros(1,Niter);
+    
+    for Nf=1:NumFrames
+	
+        % TODO: Generate random data bits
+		d = randi([0, 1], 1,N);
+		
+		% TODO: Turbo encoding
+		cs=d;             % systematic bit
+        %cp1=zeros(1,N);             % parity bit for code #1
+		%cp2=zeros(1,N); 
+		cp1=mod(filter(g1, g2, d), 2);           % parity bit for code #1
+		cp2=mod(filter(g1,g2,d(perm)), 2);          % parity bit for code #2
+	
+        % BPSK modulation
+        X=2*cs-1;
+        Y1=2*cp1-1;
+        Y2=2*cp2-1;
+        
+        % randement 1/2 un systématique et 1 a chaque coup ( interupteur )
+		
+        % TODO: AWGN channel  
+        R_X=randn(1, N) * sqrt(sigma2_w)+X; % sqrt(sigma2_w) est la puissance du bruit
+        R_Y1=randn(1, N) * sqrt(sigma2_w)+Y1;
+        R_Y2=randn(1, N) * sqrt(sigma2_w)+Y2;
+        
+     %   R_X = X;
+      % R_Y1 = Y1;
+       % R_Y2 = Y2;
+        
+        % TODO: Soft-output BPSK demodulator
+        L_X=(2/(sigma2_w)) * R_X;
+        
+        L_Y2 = zeros(1,N);
+        L_Y1 = zeros(1,N);
+        
+        for i = 1:N    
+             if mod(i, 2) == 1
+                  L_Y1(i)=(2/(sigma2_w)) * R_Y1(i);
+                  L_Y2(i) = 0;
+             else
+                  L_Y2(i)=(2/(sigma2_w)) * R_Y2(i);
+                  L_Y1(i) = 0;
+         
+             end       
+        end
+        
+        % TODO: Simulate puncturing by inserting 0 for punctured code bits
+
+        % --- Iterative turbo decoding ---
+        La1_D=zeros(1,N);
+		d_dec=zeros(1,N);
+        
+        L_out_2 = zeros(1,N);
+        L_out_inv = 0;
+        
+		for iter=1:Niter
+            
+            % Decodeur 1
+            % L_D1=siso57(L_X,L_Y1,L_out_2);
+            L_D1=siso57(L_out_2,L_X,L_Y1);
+            %Li_E1 = L_D1 - L_X - L_out_2;
+            Li_E1 = L_D1;
+            
+            L_out_1 = Li_E1(perm);
+            
+            %Somme E1
+            L_D2=siso57(L_out_1,L_X(perm),L_Y2);   
+            
+            %Somme E2
+            %Li_E2 = L_D2 - L_out_1 -L_X(perm);
+            Li_E2 = L_D2;
+            
+            L_out_2(perm) = Li_E2;
+            %L_out_2( = Li_E2;
+            
+            d_dec(perm)=L_D2>0;
+            
+			nerr(iter)=nerr(iter)+sum(xor(d,d_dec));
+		end        
+        
+    end
+    
+    % Compute BER for current SNR point
+	BER(k,:)=nerr(:)/(N*NumFrames);
+    
+end
+disp(' ');
+
+%% Plot simulation results
+figure(1);
+Pb_BPSK=0.5*erfc(sqrt(10.^([0:10]/10)));
+semilogy(0:10,Pb_BPSK,'r-',EbNodBVec,BER);
+xlabel('Eb/No (dB)'); ylabel('BER'); grid on;
+axis([0 10 1E-6 1]);
+legend({'Uncoded', 'Iteration 1','Iteration 2','Iteration 3','Iteration 4','Iteration 5'})
